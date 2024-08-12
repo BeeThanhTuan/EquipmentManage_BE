@@ -9,6 +9,7 @@ const connectDB = require('./database/connectDB.js');
 // Sử dụng route liên quan đến xác thực
 const authRoutes = require('./routes/authRoutes.js');
 const equipmentRoutes = require('./routes/equipmentRoutes.js');
+const employeeRoutes = require('./routes/employeeRoutes.js');
 
 
 const app = express();
@@ -27,6 +28,8 @@ connectDB();
 
 app.use('/', authRoutes);
 app.use('/', equipmentRoutes);
+app.use('/', employeeRoutes);
+
 
 
 

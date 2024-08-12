@@ -1,11 +1,11 @@
 const express = require('express');
 const router = express.Router();
 const fs = require('fs');
-const {Equipment} = require('../models/equipmentModel')
-const uploadImage = require('../routes/uploadRoutes');
-const { log } = require('console');
+const {Equipment, Employee} = require('../models/equipmentModel')
+const uploadEquipmentImage = require('./uploadEquipmentImageRoutes');
 
-const IMAGE_DIR = `C:/Users/MSI-PC/OneDrive/Máy tính/InternshipTMA/ManageEquipment_BE/resources/`;
+const IMAGE_DIR = `C:/Users/MSI-PC/OneDrive/Máy tính/InternshipTMA/ManageEquipment_BE/resources/equipments/`;
+
 // get all equipments
 router.get('/api/equipments', async (req, res) => {
     try {
@@ -70,42 +70,6 @@ router.get('/api/equipment/:id', async (req, res) => {
     }
 });
 
-//search equipments by search text
-router.post('/api/equipments/search', async (req, res) => {
-    const { status, searchText } = req.body; 
-    try {
-        let search = {};
-        // If status is provided, add condition to the query
-        if (status) {
-            if (status === 'instock') {
-                search.Status = false;
-            } else if (status === 'borrowed') {
-                search.Status = true;
-            }
-        }   
-        // If searchText is provided, add text search conditions to the query
-        if (searchText) {
-            search.$or = [
-                { ID: { $regex: searchText, $options: 'i' } },
-                { Name: { $regex: searchText, $options: 'i' } }
-            ];
-        }   
-        // Find equipment based on the search conditions
-        let motelDataList = await Equipment.find(search);
-        // If no data found, return an empty array
-        if (motelDataList.length === 0) {
-            return res.json([]);
-        } else {
-            res.json(motelDataList);
-        }
-
-    } catch (err) {
-        console.error('Error fetching equipments:', err); 
-        res.status(500).json({ message: 'Internal server error' });
-    }
-});
-
-
 //check equipment id exits
 router.get('/api/equipment/check/:id', async (req, res) => {
     const {id} = req.params;
@@ -122,10 +86,22 @@ router.get('/api/equipment/check/:id', async (req, res) => {
 });
 
 // Create new equipment
-router.post('/api/equipment', uploadImage, async (req, res) => {
+router.post('/api/equipment', uploadEquipmentImage, async (req, res) => {
     try {
         const { id, name, description } = req.body;
         const image = req.file ? req.file.filename : '';
+        // Check if equipment with the given ID already exists
+        const existingEquipment = await Equipment.findOne({ ID: id });
+        if (existingEquipment) {
+            // If equipment exists, return an error response and do not process the image
+            if (image) {
+                const imagePath = `${IMAGE_DIR}${image}`;      
+                fs.unlink(imagePath, (err) => {
+                    if (err) console.error('Error deleting old image:', err);
+                });
+            }
+            return res.status(401).json({ success: false, message: 'Equipment already exists' });
+        }
         const newEquipment = new Equipment({
             ID: id,
             Name: name,
@@ -152,7 +128,7 @@ function getCurrentDateFormatted() {
 }
 
 // Update equipment
-router.put('/api/equipment/:id', uploadImage, async (req, res) => {
+router.put('/api/equipment/:id', uploadEquipmentImage, async (req, res) => {
     try {
         const { id } = req.params;
         const { name, description, idEmployee } = req.body;
@@ -224,6 +200,124 @@ router.delete('/api/equipment/:id', async (req, res) => {
     } catch (error) {
         console.error('Error deleting equipment:', error);
         res.status(500).json({ success: false, message: 'Error deleting equipment', error: error.message });
+    }
+});
+
+//search equipments by search text
+router.post('/api/equipments/search', async (req, res) => {
+    const { status, searchKey } = req.body; 
+    try {
+        let search = {};
+        // If status is provided, add condition to the query
+        if (status) {
+            if (status === 'instock') {
+                search.Status = false;
+            } else if (status === 'borrowed') {
+                search.Status = true;
+            }
+        }   
+        // If searchKey is provided, add text search conditions to the query
+        if (searchKey) {
+            search.$or = [
+                { ID: { $regex: searchKey, $options: 'i' } },
+                { Name: { $regex: searchKey, $options: 'i' } }
+            ];
+        }   
+        // Find equipment based on the search conditions
+        let equipmentDataList = await Equipment.find(search);
+        // If no data found, return an empty array
+        if (equipmentDataList.length === 0) {
+            return res.json([]);
+        } else {
+            res.json(equipmentDataList);
+        }
+
+    } catch (err) {
+        console.error('Error fetching equipments:', err); 
+        res.status(500).json({ message: 'Internal server error' });
+    }
+});
+
+//borrowed  equipment
+router.post('/api/borrow-equipment', async (req, res) => {
+    const { employeeID, equipmentID } = req.body;
+    const dateBorrowed = getCurrentDateFormatted();
+    try {
+        const employee = await Employee.findOne({ ID: employeeID });
+        const equipment = await Equipment.findOne({ ID: equipmentID });
+        if (!employee) {
+            return res.status(404).json({ success: false, message: 'Employee not found' });
+        }
+        if (!equipment) {
+            return res.status(404).json({ success: false, message: 'Equipment not found' });
+        }
+
+        // Ensure ListEquipmentBorrowed is array
+        if (!Array.isArray(employee.ListEquipmentBorrowed)) {
+            employee.ListEquipmentBorrowed = [];
+        }
+
+        if (equipment.IDEmployee) {
+            return res.status(400).json({ success: false, message: 'Equipment is already borrowed' });
+        }
+
+        // Update ListEquipmentBorrowed 
+        if (!employee.ListEquipmentBorrowed.includes(equipmentID)) {
+            employee.ListEquipmentBorrowed.push(equipmentID);
+            await employee.save();
+        }
+
+        // Update equipment with the employee's ID
+        equipment.IDEmployee = employeeID;
+        equipment.DateBorrowed = dateBorrowed;
+        equipment.Status = true;
+        await equipment.save();
+        res.json({ success: true, message: 'Equipment borrowed successfully', data: equipment });
+
+    } catch (error) {
+        console.error('Error borrowing equipment:', error);
+        res.status(500).json({ success: false, message: 'Error borrowing equipment', error: error.message });
+    }
+});
+
+//return borrowed equipment
+router.post('/api/return-equipment', async (req, res) => {
+    const { employeeID, equipmentID } = req.body;
+    try {
+        // Find the employee by ID
+        const employee = await Employee.findOne({ ID: employeeID });
+        if (!employee) {
+            return res.status(404).json({ success: false, message: 'Employee not found' });
+        }
+
+        // Find the equipment by ID
+        const equipment = await Equipment.findOne({ ID: equipmentID });
+        if (!equipment) {
+            return res.status(404).json({ success: false, message: 'Equipment not found' });
+        }
+
+        // Check if the equipment is currently borrowed by the employee
+        if (equipment.IDEmployee !== employeeID) {
+            return res.status(400).json({ success: false, message: 'Equipment is not borrowed by this employee' });
+        }
+
+        // Update the employee's ListEquipmentBorrowed
+        if (Array.isArray(employee.ListEquipmentBorrowed) && employee.ListEquipmentBorrowed.includes(equipmentID)) {
+            employee.ListEquipmentBorrowed = employee.ListEquipmentBorrowed.filter(id => id !== equipmentID);
+            await employee.save();
+        }
+
+        // Update the equipment to mark it as returned
+        equipment.IDEmployee = ''; 
+        equipment.DateBorrowed = '';
+        equipment.Status = false; // Mark the equipment as available
+        await equipment.save();
+
+        res.json({ success: true, message: 'Equipment returned successfully', data: equipment });
+
+    } catch (error) {
+        console.error('Error returning equipment:', error);
+        res.status(500).json({ success: false, message: 'Error returning equipment', error: error.message });
     }
 });
 

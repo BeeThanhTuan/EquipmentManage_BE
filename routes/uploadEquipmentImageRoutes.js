@@ -4,7 +4,7 @@ const path = require('path');
 // Cấu hình lưu trữ
 const storage = multer.diskStorage({
     destination: function(req, file, cb) {
-        cb(null, 'resources/'); // Thư mục chứa ảnh
+        cb(null, 'resources/equipments'); // Thư mục chứa ảnh
     },
     filename: function(req, file, cb) {
         // Tạo tên tệp tin duy nhất bằng cách thêm thời gian hiện tại vào tên tệp tin gốc
@@ -13,7 +13,7 @@ const storage = multer.diskStorage({
 });
 
 // Cấu hình multer để chỉ chấp nhận ảnh
-const uploadImage = multer({
+const uploadEquipmentImage = multer({
     storage: storage,
     fileFilter: function(req, file, cb) {
         // Kiểm tra xem tệp tin có phải là ảnh không
@@ -24,4 +24,4 @@ const uploadImage = multer({
     }
 }).single('image');
 
-module.exports = uploadImage;
+module.exports = uploadEquipmentImage;
